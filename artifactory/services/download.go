@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"time"
 
 	biutils "github.com/jfrog/build-info-go/utils"
 	"github.com/jfrog/gofrog/version"
@@ -539,7 +540,39 @@ func (ds *DownloadService) createFileHandlerFunc(downloadParams DownloadParams, 
 	}
 }
 
+func createLock(lockFile string) error {
+	for {
+		_, err := os.Stat(lockFile)
+		if os.IsNotExist(err) {
+			if err = os.MkdirAll(filepath.Dir(lockFile), 0755); err != nil {
+				return err
+			}
+
+			file, err := os.Create(lockFile)
+			if err != nil {
+				return err
+			}
+			file.Close()
+			return nil
+		}
+		time.Sleep(time.Second * 5)
+	}
+}
+
+func removeLock(lockFile string) error {
+	return os.Remove(lockFile)
+}
+
 func (ds *DownloadService) downloadFileIfNeeded(downloadPath, localPath, localFileName, logMsgPrefix string, downloadData DownloadData, downloadParams DownloadParams) error {
+	lockFile := filepath.Join(localPath, localFileName) + ".lock"
+	if err := createLock(lockFile); err != nil {
+		return err
+	}
+	defer func() {
+		if err := os.Remove(lockFile); err != nil {
+			log.Error("Could not delete lockfile:", lockFile, " Error: "+err.Error())
+		}
+	}()
 	isEqual, e := fileutils.IsEqualToLocalFile(filepath.Join(localPath, localFileName), downloadData.Dependency.Actual_Md5, downloadData.Dependency.Actual_Sha1)
 	if e != nil {
 		return e
