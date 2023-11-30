@@ -559,10 +559,6 @@ func createLock(lockFile string) error {
 	}
 }
 
-func removeLock(lockFile string) error {
-	return os.Remove(lockFile)
-}
-
 func (ds *DownloadService) downloadFileIfNeeded(downloadPath, localPath, localFileName, logMsgPrefix string, downloadData DownloadData, downloadParams DownloadParams) error {
 	lockFile := filepath.Join(localPath, localFileName) + ".lock"
 	if err := createLock(lockFile); err != nil {
@@ -576,6 +572,13 @@ func (ds *DownloadService) downloadFileIfNeeded(downloadPath, localPath, localFi
 	isEqual, e := fileutils.IsEqualToLocalFile(filepath.Join(localPath, localFileName), downloadData.Dependency.Actual_Md5, downloadData.Dependency.Actual_Sha1)
 	if e != nil {
 		return e
+	}
+	if downloadParams.IsExplode() {
+		unpackedMarkerFile := filepath.Join(localPath, "."+localFileName+".unpacked")
+		if fileutils.IsPathExists(unpackedMarkerFile, false) {
+			log.Debug(logMsgPrefix, "Unpacked file/folder already exists.")
+			return nil
+		}
 	}
 	if isEqual {
 		log.Debug(logMsgPrefix, "File already exists locally.")

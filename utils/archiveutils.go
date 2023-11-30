@@ -17,6 +17,11 @@ import (
 // bypassInspection - Set to true to bypass archive inspection against ZipSlip
 // Extract an archive file to the 'localPath'.
 func ExtractArchive(localPath, localFileName, originFileName, logMsgPrefix string, bypassInspection bool) error {
+	unpackedMarkerFile := filepath.Join(localPath, "."+originFileName+".unpacked")
+	err := os.WriteFile(unpackedMarkerFile, []byte{}, 0644)
+	if err != nil {
+		return err
+	}
 	unarchiver := &unarchive.Unarchiver{
 		BypassInspection: bypassInspection,
 	}
