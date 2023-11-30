@@ -573,6 +573,13 @@ func (ds *DownloadService) downloadFileIfNeeded(downloadPath, localPath, localFi
 	if e != nil {
 		return e
 	}
+	if downloadParams.IsExplode() {
+		unpackedMarkerFile := filepath.Join(localPath, "."+localFileName+".unpacked")
+		if fileutils.IsPathExists(unpackedMarkerFile, false) {
+			log.Debug(logMsgPrefix, "Unpacked file/folder already exists.")
+			return nil
+		}
+	}
 	if isEqual {
 		log.Debug(logMsgPrefix, "File already exists locally.")
 		if ds.Progress != nil {
