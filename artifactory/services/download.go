@@ -1,7 +1,9 @@
 package services
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path"
@@ -9,6 +11,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/gofrs/flock"
 	biutils "github.com/jfrog/build-info-go/utils"
 	"github.com/jfrog/gofrog/version"
 
@@ -540,33 +543,40 @@ func (ds *DownloadService) createFileHandlerFunc(downloadParams DownloadParams, 
 	}
 }
 
-func createLock(lockFile string) error {
-	for {
-		_, err := os.Stat(lockFile)
-		if os.IsNotExist(err) {
-			if err = os.MkdirAll(filepath.Dir(lockFile), 0755); err != nil {
-				return err
-			}
+func createLockWithTimeout(lockFilePath string, logMsgPrefix string) (*flock.Flock, error) {
+	timeout := 5 * time.Minute
+	fileLock := flock.New(lockFilePath)
 
-			file, err := os.Create(lockFile)
-			if err != nil {
-				return err
-			}
-			file.Close()
-			return nil
-		}
-		time.Sleep(time.Second * 5)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	locked, err := fileLock.TryLockContext(ctx, 2*time.Second)
+	if err != nil {
+		log.Error(logMsgPrefix, "Unable to lock file %s: %v", fileLock, err)
+		return nil, err
 	}
+
+	if !locked {
+		errMsg := fmt.Sprintf("Failed to acquire %s within %s\n", fileLock, timeout)
+		log.Error(logMsgPrefix, errMsg)
+		return nil, errors.New(errMsg)
+	}
+
+	log.Debug(logMsgPrefix, "Lock", fileLock, "successfully acquired")
+	return fileLock, nil
 }
 
 func (ds *DownloadService) downloadFileIfNeeded(downloadPath, localPath, localFileName, logMsgPrefix string, downloadData DownloadData, downloadParams DownloadParams) error {
-	lockFile := filepath.Join(localPath, localFileName) + ".lock"
-	if err := createLock(lockFile); err != nil {
+	lockFile := filepath.Join(localPath, localFileName) + ".lockfile"
+	fileLock, err := createLockWithTimeout(lockFile, logMsgPrefix)
+	if err != nil {
 		return err
 	}
 	defer func() {
-		if err := os.Remove(lockFile); err != nil {
-			log.Error("Could not delete lockfile:", lockFile, " Error: "+err.Error())
+		if err := fileLock.Unlock(); err != nil {
+			log.Error(logMsgPrefix, "Failed to unlock", fileLock, ":", err)
+		} else {
+			log.Debug(logMsgPrefix, "Unlocked", fileLock)
 		}
 	}()
 	isEqual, e := fileutils.IsEqualToLocalFile(filepath.Join(localPath, localFileName), downloadData.Dependency.Actual_Md5, downloadData.Dependency.Actual_Sha1)
